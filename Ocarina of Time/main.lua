@@ -1,168 +1,278 @@
--- name: Ocarina of Time System
--- description: Toque 9 melodias de Ocarina of Time e SMB1!
+-- name: Ocarina of Time HUD + Free Mode (ENG / PT-BR)
+-- description: OoT music staff HUD with custom sounds, free movement, and ENG/PT-BR support (/ocarina lang).
 
-local lang = mod_storage_load("lang") or "pt"
-local TEXT = {
-    pt = {
-        ok = "[Ocarina] Mod carregado! Segure L + D-Pad Baixo.",
-        title = "OCARINA (B para sair)",
-        notes = "Notas: ",
-        played = "Voce tocou: ",
-        changed = "Idioma: Portugues (PT-BR)",
-        suns = "Sun's Song (Cura & Dia)",
-        time = "Song of Time (Velocidade)",
-        zelda = "Zelda's Lullaby (Super Pulo)",
-        prelude = "Prelude of Light (Inicio)",
-        smb1 = "Super Mario Bros. (1-UP + Moedas)",
-        storms = "Song of Storms (Tornado)",
-        saria = "Saria's Song (Invencibilidade)",
-        epona = "Epona's Song (Galope Veloz)",
-        bolero = "Bolero of Fire (Impulso Ardente)"
-    },
+-- Idioma: "en" (English) ou "pt" (Português)
+local idioma = "en"
+
+-- Textos em Ingles e Portugues
+local textos = {
     en = {
-        ok = "[Ocarina] Mod loaded! Hold L + D-Pad Down.",
-        title = "OCARINA (B to exit)",
-        notes = "Notes: ",
-        played = "You played: ",
-        changed = "Language: English (EN)",
-        suns = "Sun's Song (Heal & Day)",
-        time = "Song of Time (Speed Boost)",
-        zelda = "Zelda's Lullaby (Super Jump)",
-        prelude = "Prelude of Light (Start)",
-        smb1 = "Super Mario Bros. (1-UP + Coins)",
-        storms = "Song of Storms (Storm Spin)",
-        saria = "Saria's Song (Invincibility)",
-        epona = "Epona's Song (Fast Gallop)",
-        bolero = "Bolero of Fire (Fire Dash)"
+        modoLivre = "Free Mode (DOWN)",
+        modoMusicas = "Songs Mode (L+DOWN)",
+        tocou = "You played ",
+        chatLivreOn = "\\#50ff50\\[Ocarina] Free Mode ENABLED! Walk and play freely.",
+        chatLivreOff = "\\#ff5050\\[Ocarina] Free Mode DISABLED.",
+        chatMusicasOn = "\\#ffd700\\[Ocarina] Songs Mode ENABLED! Play melodies for effects.",
+        chatMusicasOff = "\\#ff5050\\[Ocarina] Songs Mode DISABLED.",
+        chatLang = "\\#80d0ff\\[Ocarina] Language switched to English! (Type /ocarina lang to change)"
+    },
+    pt = {
+        modoLivre = "Modo Livre (DOWN)",
+        modoMusicas = "Modo Musicas (L+DOWN)",
+        tocou = "Voce tocou ",
+        chatLivreOn = "\\#50ff50\\[Ocarina] Modo Livre ATIVADO! Ande e toque livremente.",
+        chatLivreOff = "\\#ff5050\\[Ocarina] Modo Livre DESATIVADO.",
+        chatMusicasOn = "\\#ffd700\\[Ocarina] Modo Musicas ATIVADO! Toque melodias para ativar efeitos.",
+        chatMusicasOff = "\\#ff5050\\[Ocarina] Modo Musicas DESATIVADO.",
+        chatLang = "\\#80d0ff\\[Ocarina] Idioma alterado para Portugues! (Digite /ocarina lang para mudar)"
     }
 }
 
-local SFX = {
-    A = audio_sample_load("note_d1.ogg"),
-    v = audio_sample_load("note_f.ogg"),
-    [">"] = audio_sample_load("note_a.ogg"),
-    ["<"] = audio_sample_load("note_b.ogg"),
-    ["^"] = audio_sample_load("note_d2.ogg")
+-- Modos: 0 = Desativado | 1 = Modo Livre | 2 = Modo Musicas
+local modoOcarina = 0
+local historicoNotas = {}
+local maxNotasNaTela = 8
+local musicaTocadaTexto = ""
+local tempoMostrarMusica = 0
+
+-- Controle anti-repeticao de notas
+local ultimoBotaoSegurado = 0
+local cooldownNota = 0
+
+-- Comando para trocar idioma: /ocarina lang
+local function on_ocarina_command(msg)
+    if msg == "lang" or msg == "idioma" or msg == "pt" or msg == "en" then
+        if msg == "pt" then
+            idioma = "pt"
+        elseif msg == "en" then
+            idioma = "en"
+        else
+            idioma = (idioma == "en") and "pt" or "en"
+        end
+        djui_chat_message_create(textos[idioma].chatLang)
+        return true
+    end
+    return false
+end
+
+hook_chat_command("ocarina", "[lang] - Switch language between English and Portuguese", on_ocarina_command)
+
+-- Verifica se o arquivo existe antes de carregar (evita 100% o "has script errors!")
+local function carregar_som(nomeBase)
+    local extensoes = {".mp3", ".ogg", ".aiff"}
+    for _, ext in ipairs(extensoes) do
+        local arquivo = nomeBase .. ext
+        if mod_file_exists("sound/" .. arquivo) then
+            return audio_sample_load(arquivo)
+        end
+    end
+    return nil
+end
+
+local somA      = carregar_som("note_d1")
+local somCDown  = carregar_som("note_f")
+local somCRight = carregar_som("note_a")
+local somCLeft  = carregar_som("note_b")
+local somCUp    = carregar_som("note_d2")
+
+local notasConfig = {
+    { btn = A_BUTTON,   id = "A",  label = "A", staffY = 25, som = somA,      r = 65,  g = 150, b = 255, pitch = 1.00 },
+    { btn = D_CBUTTONS, id = "CD", label = "v", staffY = 20, som = somCDown,  r = 255, g = 215, b = 40,  pitch = 1.18 },
+    { btn = R_CBUTTONS, id = "CR", label = ">", staffY = 14, som = somCRight, r = 255, g = 215, b = 40,  pitch = 1.49 },
+    { btn = L_CBUTTONS, id = "CL", label = "<", staffY = 9,  som = somCLeft,  r = 255, g = 215, b = 40,  pitch = 1.68 },
+    { btn = U_CBUTTONS, id = "CU", label = "^", staffY = 3,  som = somCUp,    r = 255, g = 215, b = 40,  pitch = 2.00 }
 }
 
-local active, buffer, noteTxt, songTxt, timer, curSample, welcomed = false, {}, "", "", 0, nil, false
-local NOTES = {
-    { btn = A_BUTTON, name = "A", p = 0.85 },
-    { btn = D_CBUTTONS, name = "v", p = 1.00 },
-    { btn = R_CBUTTONS, name = ">", p = 1.25 },
-    { btn = L_CBUTTONS, name = "<", p = 1.40 },
-    { btn = U_CBUTTONS, name = "^", p = 1.65 }
+local musicasConfig = {
+    {
+        nome = "Zelda's Lullaby",
+        seq = {"CL", "CU", "CR", "CL", "CU", "CR"},
+        efeito = function(m) m.health = 0x880 end
+    },
+    {
+        nome = "Song of Time",
+        seq = {"CR", "A", "CD", "CR", "A", "CD"},
+        efeito = function(m)
+            m.vel.y = 85.0
+            set_mario_action(m, ACT_TRIPLE_JUMP, 0)
+        end
+    },
+    {
+        nome = "Epona's Song",
+        seq = {"CU", "CL", "CR", "CU", "CL", "CR"},
+        efeito = function(m) m.forwardVel = 90.0 end
+    },
+    {
+        nome = "Song of Storms",
+        seq = {"A", "CD", "CU", "A", "CD", "CU"},
+        efeito = function(m) m.vel.y = 65.0 end
+    },
+    {
+        nome = "Super Mario Bros. Theme",
+        seq = {"CR", "CR", "CR", "A", "CR", "CU", "CD"},
+        efeito = function(m)
+            m.vel.y = 75.0
+            m.forwardVel = 60.0
+        end
+    }
 }
 
-local SONGS = {
-    { id = "suns", seq = { ">","v","^",">","v","^" }, fn = function(m) m.healCounter = 31; set_lighting_dir(0, 0); play_sound(SOUND_GENERAL_HEART_SPIN, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "time", seq = { ">","A","v",">","A","v" }, fn = function(m) gPlayerSyncTable[m.playerIndex].spd = 300; play_sound(SOUND_MENU_STAR_SOUND, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "zelda", seq = { "<","^",">","<","^",">" }, fn = function(m) set_mario_action(m, ACT_TRIPLE_JUMP, 0); m.vel.y = 85; play_sound(SOUND_GENERAL_GRAND_STAR, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "prelude", seq = { "^",">","^",">","<","^" }, fn = function(m) local np = gNetworkPlayers; play_sound(SOUND_MENU_STAR_SOUND, m.marioObj.header.gfx.cameraToObject); warp_to_level(np.currLevelNum, np.currAreaIndex, np.currActNum) end },
-    { id = "smb1", seq = { "<","<","<","v","<","^","v" }, fn = function(m) m.numLives = m.numLives + 1; m.numCoins = m.numCoins + 10; play_sound(SOUND_GENERAL_COLLECT_1UP, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "storms", seq = { "A","v","^","A","v","^" }, fn = function(m) set_lighting_dir(1, -1); set_mario_action(m, ACT_TWIRLING, 0); m.vel.y = 75; play_sound(SOUND_GENERAL_BOWSER_BOMB_EXPLOSION, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "saria", seq = { "v",">","<","v",">","<" }, fn = function(m) m.invincTimer = 300; play_sound(SOUND_MENU_STAR_SOUND, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "epona", seq = { "^","<",">","^","<",">" }, fn = function(m) local s = gPlayerSyncTable[m.playerIndex]; s.spd = 450; s.jmp = 450; play_sound(SOUND_GENERAL_GRAND_STAR, m.marioObj.header.gfx.cameraToObject) end },
-    { id = "bolero", seq = { "v","A","v","A",">","v",">","v" }, fn = function(m) m.invincTimer = 150; set_mario_action(m, ACT_DIVE, 0); m.vel.y = 45; m.forwardVel = 85; play_sound(SOUND_MOVING_LAVA_BURN, m.marioObj.header.gfx.cameraToObject) end }
-}
-
-local function check_songs(m)
-    local c = #buffer
-    for _, s in ipairs(SONGS) do
-        local len = #s.seq
-        if c >= len then
-            local ok = true
-            for i = 1, len do
-                if buffer[c - len + i] ~= s.seq[i] then ok = false break end
+local function checar_musicas(m)
+    for _, musica in ipairs(musicasConfig) do
+        local tam = #musica.seq
+        if #historicoNotas >= tam then
+            local acertou = true
+            for i = 1, tam do
+                if historicoNotas[#historicoNotas - tam + i].id ~= musica.seq[i] then
+                    acertou = false
+                    break
+                end
             end
-            if ok then
-                if curSample then audio_sample_stop(curSample) end
-                songTxt = TEXT[lang][s.id]
-                timer = 100
-                buffer = {}
-                active = false
-                set_mario_action(m, ACT_IDLE, 0)
-                s.fn(m)
+
+            if acertou then
+                play_sound(SOUND_MENU_STAR_SOUND_OKEY_DOKEY, m.marioObj.header.gfx.cameraToObject)
+                musicaTocadaTexto = musica.nome
+                tempoMostrarMusica = 90
+                historicoNotas = {}
+                if musica.efeito then musica.efeito(m) end
                 return
             end
         end
     end
 end
 
-local function mario_update(m)
-    if m.playerIndex == 0 and not welcomed then
-        welcomed = true
-        djui_chat_message_create(TEXT[lang].ok)
+local function tocar_nota(nota, m)
+    if nota.som ~= nil then
+        audio_sample_play(nota.som, m.pos, 1.0)
+    else
+        play_sound_with_freq_scale(SOUND_MENU_STAR_SOUND, m.marioObj.header.gfx.cameraToObject, nota.pitch)
     end
-    local s = gPlayerSyncTable[m.playerIndex]
-    if s.spd and s.spd > 0 then
-        s.spd = s.spd - 1
-        if m.forwardVel > 10 then m.forwardVel = m.forwardVel * 1.25 end
+
+    table.insert(historicoNotas, nota)
+    if #historicoNotas > maxNotasNaTela then
+        table.remove(historicoNotas, 1)
     end
-    if s.jmp and s.jmp > 0 then
-        s.jmp = s.jmp - 1
-        if (m.action == ACT_JUMP or m.action == ACT_DOUBLE_JUMP) and m.vel.y > 0 then m.vel.y = m.vel.y + 1.2 end
+
+    if modoOcarina == 2 then
+        checar_musicas(m)
     end
+end
+
+local function on_mario_update(m)
     if m.playerIndex ~= 0 then return end
-    if not active then
-        if (m.controller.buttonDown & L_TRIG) ~= 0 and (m.controller.buttonPressed & D_JPAD) ~= 0 then
-            if (m.action & ACT_GROUP_MASK) == ACT_GROUP_STATIONARY then
-                active = true; buffer = {}; noteTxt = ""
-                play_sound(SOUND_MENU_CLICK_FILE_SELECT, m.marioObj.header.gfx.cameraToObject)
+
+    local pressed = m.controller.buttonPressed
+    local down = m.controller.buttonDown
+    local t = textos[idioma]
+
+    if cooldownNota > 0 then
+        cooldownNota = cooldownNota - 1
+    end
+
+    if (pressed & D_JPAD) ~= 0 then
+        if (down & L_TRIG) ~= 0 then
+            if modoOcarina == 2 then
+                modoOcarina = 0
+                djui_chat_message_create(t.chatMusicasOff)
+            else
+                modoOcarina = 2
+                djui_chat_message_create(t.chatMusicasOn)
+            end
+        else
+            if modoOcarina == 1 then
+                modoOcarina = 0
+                djui_chat_message_create(t.chatLivreOff)
+            else
+                modoOcarina = 1
+                djui_chat_message_create(t.chatLivreOn)
             end
         end
+        historicoNotas = {}
+        ultimoBotaoSegurado = 0
         return
     end
-    set_mario_action(m, ACT_READING_AUTOMATIC_DIALOG, 0)
-    if (m.controller.buttonPressed & B_BUTTON) ~= 0 then
-        if curSample then audio_sample_stop(curSample) end
-        active = false; set_mario_action(m, ACT_IDLE, 0); return
+
+    if modoOcarina == 0 then return end
+
+    if ultimoBotaoSegurado ~= 0 and (down & ultimoBotaoSegurado) == 0 then
+        ultimoBotaoSegurado = 0
     end
-    for _, n in ipairs(NOTES) do
-        if (m.controller.buttonPressed & n.btn) ~= 0 then
-            table.insert(buffer, n.name)
-            if #buffer > 10 then table.remove(buffer, 1) end
-            noteTxt = table.concat(buffer, " ")
-            if SFX[n.name] then
-                if curSample then audio_sample_stop(curSample) end
-                curSample = SFX[n.name]
-                audio_sample_play(curSample, gLakituState.pos, 1.0)
-            else
-                play_sound_with_freq_scale(SOUND_MENU_CLICK_CHANGE_VIEW, m.marioObj.header.gfx.cameraToObject, n.p)
-            end
-            check_songs(m)
+
+    for _, nota in ipairs(notasConfig) do
+        if (pressed & nota.btn) ~= 0 and ultimoBotaoSegurado ~= nota.btn and cooldownNota == 0 then
+            tocar_nota(nota, m)
+            ultimoBotaoSegurado = nota.btn
+            cooldownNota = 4
             break
         end
     end
+
+    if (down & A_BUTTON) ~= 0 or (pressed & A_BUTTON) ~= 0 then
+        m.controller.buttonPressed = m.controller.buttonPressed & ~A_BUTTON
+        m.controller.buttonDown = m.controller.buttonDown & ~A_BUTTON
+    end
+
+    m.controller.buttonPressed = m.controller.buttonPressed & ~(U_CBUTTONS | D_CBUTTONS | L_CBUTTONS | R_CBUTTONS)
+    m.controller.buttonDown = m.controller.buttonDown & ~(U_CBUTTONS | D_CBUTTONS | L_CBUTTONS | R_CBUTTONS)
 end
 
 local function on_hud_render()
+    if modoOcarina == 0 then return end
+
+    local t = textos[idioma]
+
     djui_hud_set_resolution(RESOLUTION_N64)
     djui_hud_set_font(FONT_NORMAL)
-    local w, h = djui_hud_get_screen_width(), djui_hud_get_screen_height()
-    if timer > 0 then
-        timer = timer - 1
-        djui_hud_set_color(255, 230, 50, 255)
-        local t = TEXT[lang].played .. songTxt
-        djui_hud_print_text(t, (w - djui_hud_measure_text(t)) / 2, 40, 1)
+
+    local screenW = djui_hud_get_screen_width()
+    local screenH = djui_hud_get_screen_height()
+
+    local staffW = 220
+    local staffH = 34
+    local staffX = (screenW - staffW) / 2
+    local staffY = screenH - 52
+
+    djui_hud_set_color(0, 0, 0, 140)
+    djui_hud_render_rect(staffX - 6, staffY - 4, staffW + 12, staffH + 8)
+
+    for linha = 0, 3 do
+        local lineY = staffY + 5 + (linha * 8)
+        if modoOcarina == 2 then
+            djui_hud_set_color(255, 220, 100, 170)
+        else
+            djui_hud_set_color(200, 220, 255, 150)
+        end
+        djui_hud_render_rect(staffX, lineY, staffW, 1)
     end
-    if active then
-        djui_hud_set_color(0, 0, 0, 180)
-        djui_hud_render_rect(w / 2 - 120, h - 65, 240, 45)
-        djui_hud_set_color(100, 200, 255, 255)
-        djui_hud_print_text(TEXT[lang].title, w / 2 - 110, h - 60, 0.7)
-        djui_hud_set_color(255, 255, 255, 255)
-        djui_hud_print_text(TEXT[lang].notes .. noteTxt, w / 2 - 110, h - 42, 0.9)
+
+    djui_hud_set_color(255, 90, 70, 255)
+    djui_hud_print_text("&", staffX + 4, staffY + 5, 0.75)
+
+    djui_hud_set_color(255, 255, 255, 200)
+    if modoOcarina == 1 then
+        djui_hud_print_text(t.modoLivre, staffX, staffY - 13, 0.30)
+    else
+        djui_hud_print_text(t.modoMusicas, staffX, staffY - 13, 0.30)
+    end
+
+    if tempoMostrarMusica > 0 then
+        tempoMostrarMusica = tempoMostrarMusica - 1
+        djui_hud_set_color(255, 230, 60, 255)
+        djui_hud_print_text(t.tocou .. musicaTocadaTexto .. "!", staffX + 75, staffY - 13, 0.32)
+    end
+
+    local startX = staffX + 26
+    for i, nota in ipairs(historicoNotas) do
+        local noteX = startX + ((i - 1) * 23)
+        local noteY = staffY + nota.staffY
+
+        djui_hud_set_color(nota.r, nota.g, nota.b, 255)
+        djui_hud_render_rect(noteX, noteY, 10, 10)
+
+        djui_hud_set_color(20, 20, 20, 255)
+        djui_hud_print_text(nota.label, noteX + 2, noteY, 0.32)
     end
 end
 
-hook_chat_command("ocarina", "[pt|en]", function(msg)
-    local a = string.lower(msg)
-    if a == "pt" or a == "en" then
-        lang = a; mod_storage_save("lang", lang); djui_chat_message_create(TEXT[lang].changed); return true
-    end
-    djui_chat_message_create("Use: /ocarina pt ou /ocarina en"); return true
-end)
-
-hook_event(HOOK_MARIO_UPDATE, mario_update)
+hook_event(HOOK_MARIO_UPDATE, on_mario_update)
 hook_event(HOOK_ON_HUD_RENDER, on_hud_render)
