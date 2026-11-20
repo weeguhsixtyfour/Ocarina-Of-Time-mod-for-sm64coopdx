@@ -1,10 +1,8 @@
 -- name: Ocarina of Time HUD + Free Mode (ENG / PT-BR)
--- description: OoT music staff HUD with custom sounds, free movement, and ENG/PT-BR support (/ocarina lang).
+-- description: OoT music staff HUD with custom sounds, 9 playable songs with effects, free movement, and ENG/PT-BR support (/ocarina lang).
 
--- Idioma: "en" (English) ou "pt" (Português)
 local idioma = "en"
 
--- Textos em Ingles e Portugues
 local textos = {
     en = {
         modoLivre = "Free Mode (DOWN)",
@@ -28,18 +26,15 @@ local textos = {
     }
 }
 
--- Modos: 0 = Desativado | 1 = Modo Livre | 2 = Modo Musicas
 local modoOcarina = 0
 local historicoNotas = {}
 local maxNotasNaTela = 8
 local musicaTocadaTexto = ""
 local tempoMostrarMusica = 0
 
--- Controle anti-repeticao de notas
 local ultimoBotaoSegurado = 0
 local cooldownNota = 0
 
--- Comando para trocar idioma: /ocarina lang
 local function on_ocarina_command(msg)
     if msg == "lang" or msg == "idioma" or msg == "pt" or msg == "en" then
         if msg == "pt" then
@@ -57,23 +52,11 @@ end
 
 hook_chat_command("ocarina", "[lang] - Switch language between English and Portuguese", on_ocarina_command)
 
--- Verifica se o arquivo existe antes de carregar (evita 100% o "has script errors!")
-local function carregar_som(nomeBase)
-    local extensoes = {".mp3", ".ogg", ".aiff"}
-    for _, ext in ipairs(extensoes) do
-        local arquivo = nomeBase .. ext
-        if mod_file_exists("sound/" .. arquivo) then
-            return audio_sample_load(arquivo)
-        end
-    end
-    return nil
-end
-
-local somA      = carregar_som("note_d1")
-local somCDown  = carregar_som("note_f")
-local somCRight = carregar_som("note_a")
-local somCLeft  = carregar_som("note_b")
-local somCUp    = carregar_som("note_d2")
+local somA      = audio_sample_load("note_d1.ogg")
+local somCDown  = audio_sample_load("note_f.ogg")
+local somCRight = audio_sample_load("note_a.ogg")
+local somCLeft  = audio_sample_load("note_b.ogg")
+local somCUp    = audio_sample_load("note_d2.ogg")
 
 local notasConfig = {
     { btn = A_BUTTON,   id = "A",  label = "A", staffY = 25, som = somA,      r = 65,  g = 150, b = 255, pitch = 1.00 },
@@ -85,9 +68,43 @@ local notasConfig = {
 
 local musicasConfig = {
     {
+        nome = "Megalovania (Sans Mode)",
+        seq = {"A", "A", "CU", "CR"},
+        efeito = function(m)
+            m.vel.y = 110.0
+            m.forwardVel = 110.0
+            set_mario_action(m, ACT_TRIPLE_JUMP, 0)
+        end
+    },
+  
+  {
         nome = "Zelda's Lullaby",
         seq = {"CL", "CU", "CR", "CL", "CU", "CR"},
-        efeito = function(m) m.health = 0x880 end
+        efeito = function(m)
+            m.health = 0x880
+        end
+    },
+    {
+        nome = "Epona's Song",
+        seq = {"CU", "CL", "CR", "CU", "CL", "CR"},
+        efeito = function(m)
+            m.forwardVel = 95.0
+        end
+    },
+    {
+        nome = "Saria's Song",
+        seq = {"CD", "CR", "CL", "CD", "CR", "CL"},
+        efeito = function(m)
+            m.numCoins = m.numCoins + 10
+            m.healCounter = 40
+        end
+    },
+    {
+        nome = "Sun's Song",
+        seq = {"CR", "CD", "CU", "CR", "CD", "CU"},
+        efeito = function(m)
+            m.invincTimer = 150
+        end
     },
     {
         nome = "Song of Time",
@@ -98,21 +115,36 @@ local musicasConfig = {
         end
     },
     {
-        nome = "Epona's Song",
-        seq = {"CU", "CL", "CR", "CU", "CL", "CR"},
-        efeito = function(m) m.forwardVel = 90.0 end
-    },
-    {
         nome = "Song of Storms",
         seq = {"A", "CD", "CU", "A", "CD", "CU"},
-        efeito = function(m) m.vel.y = 65.0 end
+        efeito = function(m)
+            m.vel.y = 70.0
+            set_mario_action(m, ACT_TWIRLING, 0)
+        end
+    },
+    {
+        nome = "Minuet of Forest",
+        seq = {"A", "CU", "CL", "CR", "CL", "CR"},
+        efeito = function(m)
+            m.numLives = m.numLives + 1
+            play_sound(SOUND_GENERAL_COLLECT_1UP, m.marioObj.header.gfx.cameraToObject)
+        end
+    },
+    {
+        nome = "Bolero of Fire",
+        seq = {"CD", "A", "CD", "A", "CR", "CD", "CR", "CD"},
+        efeito = function(m)
+            m.vel.y = 95.0
+            set_mario_action(m, ACT_BURNING_JUMP, 0)
+        end
     },
     {
         nome = "Super Mario Bros. Theme",
         seq = {"CR", "CR", "CR", "A", "CR", "CU", "CD"},
         efeito = function(m)
-            m.vel.y = 75.0
-            m.forwardVel = 60.0
+            m.vel.y = 80.0
+            m.forwardVel = 70.0
+            set_mario_action(m, ACT_TRIPLE_JUMP, 0)
         end
     }
 }
@@ -270,9 +302,9 @@ local function on_hud_render()
         djui_hud_render_rect(noteX, noteY, 10, 10)
 
         djui_hud_set_color(20, 20, 20, 255)
-        djui_hud_print_text(nota.label, noteX + 2, noteY, 0.32)
-    end
+djui_hud_print_text(nota.label, noteX + 2, noteY, 0.32)
 end
-
+end
 hook_event(HOOK_MARIO_UPDATE, on_mario_update)
 hook_event(HOOK_ON_HUD_RENDER, on_hud_render)
+-- FIM DO SCRIPT
